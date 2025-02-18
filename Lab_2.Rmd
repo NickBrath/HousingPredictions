@@ -1,0 +1,222 @@
+---
+title: "Lab_2"
+author: "Meng-Kang Kao"
+date: "7/20/2022"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r eval=FALSE, include=FALSE}
+if (!require("tidytuesdayR"))
+  install.packages("tidytuesdayR")
+library(tidytuesdayR)
+```
+```{r include=FALSE}
+library(tidyverse)
+library(patchwork)
+library(stargazer)
+library(sandwich)
+library(lmtest)
+library(magrittr)
+library(ggplot2)
+library(car)
+```
+```{r eval=FALSE, include=FALSE}
+tuesdata <- tt_load('2022-07-05')
+rent <- tuesdata$rent
+```
+```{r include=FALSE}
+rent <- read.csv('rent.csv')
+caArea <- read.csv('caarea.csv')
+caArea2 <- read.csv('caarea2.csv')
+fbi <- read.csv('fbiCrime.csv')
+```
+```{r}
+#summary(rent)
+#200796 total rows
+rent %>%
+  group_by(year) %>%
+  summarize(
+    count = n()
+  ) %>%
+  arrange(desc(count))
+
+#year 2012 has 35206 rows
+
+rent_2012 <- rent %>%
+  filter(
+    year == 2012,
+  )
+
+sum(!is.na(rent_2012$price)) #35206 rows has price information
+sum(!is.na(rent_2012$beds)) #34023 rows has number of bedrooms information
+sum(!is.na(rent_2012$baths)) #6498 rows has number of bathrooms information
+sum(!is.na(rent_2012$sqft)) #20144 rows has number of sqft information
+sum(!is.na(rent_2012$county)) #35011 rows has number of county information
+
+rent_2012_clean <- rent %>%
+  filter(
+    year == 2012,
+    !is.na(price),
+    !is.na(beds),
+    !is.na(baths),
+    !is.na(sqft),
+    !is.na(county)
+  )
+
+rent_supp <- left_join(x=caArea2, fbi, by = 'city')
+rent_supp <- rent_supp %>%
+  mutate(
+    population_density = as.numeric(Population) / as.numeric(sq.mi),
+    crime_per_1000 = as.numeric(Violent.crime) / as.numeric(Population) * 1000
+  )
+
+#rent_2012_clean_2 <- left_join(x=rent_2012_clean, caArea2, by = 'city')
+#rent_2012_clean_3 <- left_join(x=rent_2012_clean_2, fbi, by = 'city')
+rent_2012_clean_2 <- left_join(x=rent_2012_clean, rent_supp, by = 'city')
+
+#population_density
+#crime_per_1000
+
+rent_2012_clean_3 <- rent_2012_clean_2 %>%
+  mutate(
+    population = as.numeric(gsub(",","",Population)),
+    population_density = as.numeric(population) / sq.mi,
+    crime_per_1000 = as.integer(Violent.crime) / as.integer(population) * 1000
+  )
+
+rent_2012_clean_3 <- rent_2012_clean_3 %>%
+  filter(
+    !is.na(population_density),
+    !is.na(crime_per_1000)
+  )
+
+rent_2012_clean_4_crime_under_10 <- rent_2012_clean_3 %>%
+  filter(
+    crime_per_1000 < 11
+  )
+  
+sum(is.na(rent_2012_clean_3$population_density))
+sum(is.na(rent_2012_clean_3$crime_per_1000))
+
+count(rent_2012_clean) #3764 rows of clean data after removing na rows for any of the fields used in linear model
+
+hist(rent_2012_clean_3$beds)
+```
+```{r echo=TRUE}
+mod <- lm(price ~ beds + baths + sqft + population_density + crime_per_1000, data = rent_2012_clean_4_crime_under_10)
+mod_2 <- lm(price ~ beds + baths + sqft + population_density, data = rent_2012_clean_3)
+mod_3 <- lm(price ~ beds + baths + sqft + crime_per_1000, data = rent_2012_clean_3)
+#mod <- lm(price ~ beds + baths + sqft + crime_per_1000, data = rent_2012_clean_3)
+#mod <- lm(price ~ beds + baths + sqft + population_density, data = rent_2012_clean_3)
+#mod <- lm(price ~ beds + baths + sqft, data = rent_2012_clean_3)
+coeftest(mod, vcov=vcovHC(mod))
+vif(mod)
+t.test(x=rent_2012_clean_3$crime_per_1000, y= rent_2012_clean_3$price, data=rent_2012_clean_3)
+wilcox.test(x=rent_2012_clean_3$crime_per_1000, y=rent_2012_clean_3$price)
+stargazer(mod, mod_2, mod_3)
+```
+```{r}
+rent_2011 <- rent %>%
+  filter(year == 2011,
+         !is.na(price),
+         !is.na(beds),
+         !is.na(baths),
+         !is.na(sqft),
+         !is.na(county)
+)
+
+hist(rent_2011$price)
+scatterplot(rent_2011$beds, rent_2011$price)
+ggplot(data=rent_2011, aes(baths, price)) + geom_point()
+```
+```{r}
+ggplot(data = rent_2012_clean_4_crime_under_10, aes(crime_per_1000, predict(mod))) + geom_point() + geom_smooth()
+
+ggplot(data = rent_2012_clean_3, aes(population_density, predict(mod))) + geom_point() + geom_smooth()
+```
+
+```{r}
+rent_2012_clean_3
+```
+
+```{r}
+vif(mod)
+```
+
+```{r}
+ggplot(data=rent_2012_clean_3, aes(predict(mod), resid(mod))) + geom_point() +geom_smooth()
+```
+```{r}
+qqplot(predict(mod),resid(mod)) + geom_smooth()
+hist(resid(mod))
+```
+
+
+```{r}
+unique(rent$year)
+```
+
+```{r}
+ggplot(data=rent_2012_clean_3, aes(crime_per_1000, price)) + geom_boxplot() + theme(axis.text.x = element_text(angle=90)) + ggtitle("Price Distribution per County")
+```
+
+```{r}
+ggplot(data=rent_2012_clean, aes(county, price)) + geom_boxplot() + theme(axis.text.x = element_text(angle=90)) + ggtitle("Price Distribution per County")
+```
+
+```{r}
+hist(rent_2012_clean$baths)
+hist(rent_2012_clean$beds)
+```
+```{r}
+# Break down of counties based on direction
+north_counties = list("sonoma", "napa", "solano")
+south_counties = list("santa clara")
+west_counties = list("san francisco", "marin")
+east_counties = list("contra costa", "alameda")
+unique(rent_2012_clean$county) 
+
+north <- rent_2012_clean %>% filter(
+  county == north_counties
+)
+
+south <- rent_2012_clean %>% filter(
+  county == south_counties
+)
+
+west <- rent_2012_clean %>% filter(
+  county == west_counties
+)
+
+east <- rent_2012_clean %>% filter(
+  county == east_counties
+)
+
+hist(north$price)
+hist(south$price)
+hist(east$price)
+hist(west$price)
+```
+
+```{r}
+rent_2012_clean
+```
+```{r}
+caArea$city = tolower(caArea$city)
+caArea
+ggplot(data=caArea, aes(county, population)) + geom_point() + theme(axis.text.x = element_text(angle=90))
+```
+
+
+
+```{r}
+rent_2012_clean_3 <- merge(x=rent_2012_clean, y=caArea, by='city')
+drop <- c("address", "lat", "lon","date","title","descr","details", "county.y")
+rent_2012_clean_3 = rent_2012_clean_3[,!(names(rent_2012_clean_3) %in% drop)]
+rent_2012_clean_3
+mod_2 <- lm(price~county.x+sqmi+sqft+baths, data=rent_2012_clean_3)
+coef(mod_2)
+```

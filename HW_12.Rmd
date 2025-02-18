@@ -1,0 +1,179 @@
+---
+title: "HW 12: CLM Practice"
+author: 'Brian Tung, Kevin Cahillane, Meng-Kang Kao, Nic Brathwaite'
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include=FALSE}
+library(tidyverse)
+library(lmtest)
+library(car)
+```
+
+## Part 2 - CLM Practice
+
+For the following questions, your task is to evaluate the Classical Linear Model assumptions. It is not enough to say that an assumption is met or not met; instead, present evidence based on your background knowledge, visualizations, and numerical summaries.
+
+The file `videos.txt` contains 9618 observations of videos shared on YouTube. It was created by Cheng, Dale and Liu at Simon Fraser University. Please see [this link](http://netsg.cs.sfu.ca/youtubedata/) for details about how the data was collected.
+
+You wish to run the following regression:
+
+$$
+ln(\text{views}) = \beta_0 + \beta_1 \text{rate}  + \beta_3 \text{length}
+$$ 
+The variables are as follows:
+
+- `views`: the number of views by YouTube users.
+- `rate`: This is the average of the ratings that the video received. You may think of this as a proxy for video quality. (Notice that this is different from the variable `ratings` which is a count of the total number of ratings that a video has received.)
+- `length:` the duration of the video in seconds.
+
+\newpage
+
+0. Data Wrangling
+
+Upon reviewing Youtube's video length limit in 2008, we discovered that at the time only the "verified" accounts can upload videos more than 10 minutes. There are only 232 rows, compared with overall 9618 in the dataset, we believe those videos should be excluded from our CLM assumption evaluation.
+
+We also removed 9 rows that do not have any views from the dataset.
+
+Lastly, there are 1473 rows that have rate value as 0. Upon reviewing how the rate is calculated, value 0 means the video does not have rate information. We decided to use the average rate for all videos with valid rate information (4.42) to replace those rate with 0 values.
+
+```{r include=FALSE}
+videos <- read.csv('videos.txt', sep='\t')
+
+head(videos) #9618 rows
+
+videos <- videos %>%
+  filter(
+    length <= 600
+  )
+
+#head(videos2) #232 rows
+#hist(data=videos2, videos2$length)
+```
+```{r include=FALSE}
+#count(videos) #9618 rows total
+sum(!is.na(videos$views)) #9377 rows with views information
+
+# Scott's version
+videos$rate <- ifelse(videos$rate == 0, mean(videos$rate[videos$rate != 0]), videos$rate)
+
+sum(videos$rate == 0)
+
+# Mark's version
+#videos$rate <- ifelse(videos$rate == 0, mean(videos$rate), videos$rate)
+
+videos <- videos %>%
+  filter(
+    !is.na(views)
+  )
+```
+```{r include=FALSE}
+mod <- lm(log(views)~rate + length, data=videos)
+
+coeftest(mod)
+```
+
+
+1. Evaluate the **IID** assumption.
+
+The IID assumption for justifying the use of a classic linear regression model mandates that each video in the dataset was independently selected from one another and had the same probability distribution of being included in the data as all other Youtube videos. This sample of Youtube videos violates the IID assumption as explained in the Cheng, Liu and Dale’s paper^[Cheng, Liu and Dale (2013), Understanding the Characteristics of Internet Short Video Sharing: A YouTube-Based Measurement Study https://www2.cs.sfu.ca/~jcliu/Papers/UnderstandingCharactiristics.pdf]. When explaining the web crawler they used to sample youtube videos, they write “we defined the initial set of a list of IDs, which the crawler reads in to a queue at the beginning of the crawl. When processing each video, [the crawler] checks the list of related videos and adds any new ones to the queue” [1185]. As a result, the videos were not sampled independently of one another but were actually clustered by topics and keywords. This would be similar to sampling all individuals in a randomly selected household where individuals in larger families would be more likely to be selected.
+
+```{r eval=FALSE, fig.height=2, include=FALSE}
+videos %>%
+  ggplot(aes(rate, length)) + 
+  geom_point()
+```
+
+2. Evaluate the **No perfect Collinearity** assumption.
+
+The no perfect collinearity assumption states that there isn’t an exact linear relationship between 2 or more
+input variables. Using the vif function, we can confirm that there is no risk of perfect collinearity as the vif coefficients of our input variables are very low at 1.025.
+
+```{r eval=FALSE, include=FALSE}
+ggplot(data = videos, aes(rate, length)) +geom_smooth() +labs(title = 'Relationship between video length and video rate')
+```
+
+```{r eval=FALSE, include=FALSE}
+vif(mod)
+```
+
+\newpage
+
+3. Evaluate the **Linear Conditional Expectation:** assumption.
+
+When assessing for any linear conditional expectations within the data our x values will show dependency with our y values by offsetting the residuals and predictions. Since the data set in use is looking at video rates and length we have plotted a graph for the rate vs our model's predicted length and predictions vs residuals to visualize if there are any conditional expectations between the two. Our rates vs the model's prediction clearly visualizes a predicted linear regression line that captures the association between our variables. Our residuals and predictions plot shows a steady balance where our predictions account for a majority of the residual values. Based off these plots and transformation of data we can conclude that the condition for Linear Conditional Expectation is met. The residual and prediction graph is evenly split between the residuals range in our graph.
+
+```{r echo=FALSE, fig.height=2.5, fig.width=3, message=FALSE}
+ggplot(data=videos, aes(rate, predict(mod))) + geom_point() + geom_smooth(method = "lm")
+videos %>%
+  mutate (
+    res = resid(mod),
+    fit = predict(mod)
+  ) %>%
+  ggplot(aes(fit, res)) +
+  xlab('Predicted') +
+  ylab('Residuals') +
+  geom_point() +
+  geom_smooth()
+```
+
+```{r eval=FALSE, include=FALSE}
+ggplot(data=videos, aes(rate, length)) + geom_point() + geom_smooth(method = "lm")
+
+ggplot(data=videos, aes(rate, predict(mod))) + geom_point() + geom_smooth(method = "lm")
+
+ggplot(data=videos, aes(rate, resid(mod))) + geom_point() + stat_smooth()
+```
+```{r eval=FALSE, fig.height=2.5, message=FALSE, include=FALSE}
+videos %>%
+  mutate (
+    res = resid(mod),
+    fit = predict(mod)
+  ) %>%
+  ggplot(aes(fit, res)) + 
+  xlab('Predicted') +
+  ylab('Residuals') +
+  geom_point() + 
+  geom_smooth() 
+```
+
+4. Evaluate the **Homoskedastic Errors:** assumption.
+
+The homoskedastic assumption states that the variance of residuals in the regression model, while unknown, remains constant for all predictors. Homoskedasticity of a regression model can be determined through the Breusch-Pagan statistical test, where the null hypothesis is homoskedastic error and the alternative hypothesis is heteroskedastic error. This test reveals a p-value of 0.03, so we can reject the null hypothesis. Although the scale-location visualization shows a flat smoothing curve, we decided to form our conclusion on the homoskedastic assumption based on the statistical test rather than a visualization estimate. As a result, we conclude that the variance of residuals is not constant and is thus, heteroskadistic.
+
+```{r eval=FALSE, include=FALSE}
+# H0: Homoskedastic error
+bptest(mod)
+```
+```{r echo=FALSE, fig.height=2.5, fig.width=3, message=FALSE, warning=FALSE}
+# fit vs residual plot
+videos %>%
+mutate(
+res = resid(mod),
+fit = predict(mod)
+) %>%
+ggplot(aes(fit, res)) + geom_point() + geom_smooth()
+plot(mod, which=3)
+```
+
+5. Evaluate the **Normally Distributed Errors:** assumption.
+
+Upon visually inspecting the QQ plot and histogram on the model and residuals, we believe the errors are normally distributed. 
+
+```{r echo=FALSE, fig.height=3, fig.width=3, message=FALSE, warning=FALSE, paged.print=FALSE}
+plot(mod, which=c(2))
+videos %>%
+  mutate(
+    res = resid(mod),
+    fit = predict(mod)
+    ) %>%
+  ggplot(aes(x=res)) +
+  geom_histogram() +
+  xlab("Residuals") +
+  ylab("Count")
+  
+```
